@@ -1,0 +1,170 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role and verification status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["student", "staff", "admin"] },
+        "status": { "type": "string", "enum": ["pending", "active"] },
+        "accountStatus": { "type": "string", "enum": ["active", "suspended"] },
+        "rejectedClaimCount": { "type": "number" },
+        "flagged": { "type": "boolean" },
+        "flagReason": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role", "status", "accountStatus"]
+    },
+    "ItemReport": {
+      "title": "ItemReport",
+      "description": "Lost or found item report submitted on campus",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 100 },
+        "userEmail": { "type": "string", "format": "email", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["lost", "found"] },
+        "itemName": { "type": "string", "maxLength": 120 },
+        "category": {
+          "type": "string",
+          "enum": [
+            "Laptop / tablet",
+            "Phone",
+            "Student ID / cards",
+            "Wallet",
+            "Bag / backpack",
+            "Keys",
+            "Headphones / earbuds",
+            "Books / stationery",
+            "Clothing",
+            "Other"
+          ]
+        },
+        "colour": { "type": "string", "maxLength": 50 },
+        "location": { "type": "string", "maxLength": 150 },
+        "date": { "type": "string", "maxLength": 20 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "whereItemIs": { "type": "string", "maxLength": 250 },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Submitted",
+            "Under Review",
+            "Possible Match",
+            "Pending Verification",
+            "Returned",
+            "Rejected",
+            "Archived"
+          ]
+        },
+        "flaggedDuplicate": { "type": "boolean" },
+        "locked": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "lastActivityAt": { "type": "string" },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "imageAltText": { "type": "string", "maxLength": 500 },
+        "matchedWithReportId": { "type": "string", "maxLength": 128 },
+        "verificationNotes": { "type": "string", "maxLength": 2000 },
+        "contactEmail": { "type": "string", "maxLength": 120 },
+        "contactPhone": { "type": "string", "maxLength": 30 },
+        "urgent": { "type": "boolean" },
+        "urgentReason": { "type": "string", "maxLength": 140 }
+      },
+      "required": ["id", "userId", "type", "itemName", "category", "colour", "location", "date", "description", "status"]
+    },
+    "MatchSuggestion": {
+      "title": "MatchSuggestion",
+      "description": "System-generated match comparison between lost and found reports",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "lostReportId": { "type": "string", "maxLength": 128 },
+        "foundReportId": { "type": "string", "maxLength": 128 },
+        "categoryScore": { "type": "number" },
+        "descriptionScore": { "type": "number" },
+        "locationScore": { "type": "number" },
+        "dateScore": { "type": "number" },
+        "colourScore": { "type": "number" },
+        "totalScore": { "type": "number" },
+        "label": { "type": "string", "enum": ["Likely match", "Possible match"] },
+        "status": { "type": "string", "enum": ["pending", "dismissed", "confirmed"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "lostReportId", "foundReportId", "totalScore", "label", "status"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Administrator alerts regarding match detections or account flags",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "audience": { "type": "string", "enum": ["admin"] },
+        "type": { "type": "string", "enum": ["possible_match", "report_review", "account_flagged", "abuse_alert"] },
+        "message": { "type": "string", "maxLength": 1000 },
+        "relatedId": { "type": "string", "maxLength": 128 },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "audience", "type", "message", "read", "createdAt"]
+    },
+    "AdminAction": {
+      "title": "AdminAction",
+      "description": "Immutable audit record of administrative review and ownership verification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "adminId": { "type": "string", "maxLength": 128 },
+        "adminName": { "type": "string", "maxLength": 100 },
+        "action": { "type": "string", "maxLength": 80 },
+        "reportId": { "type": "string", "maxLength": 128 },
+        "targetUserId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 2000 },
+        "outcome": { "type": "string", "maxLength": 250 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "adminId", "adminName", "action", "details", "createdAt"]
+    },
+    "TestDoc": {
+      "title": "TestDoc",
+      "description": "Health check document for testing Firestore server connectivity",
+      "type": "object",
+      "properties": {
+        "connected": { "type": "boolean" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User account and profile data"
+    },
+    "/admins/{userId}": {
+      "schema": "User",
+      "description": "Authorised administrator records for RBAC lookup"
+    },
+    "/item_reports/{reportId}": {
+      "schema": "ItemReport",
+      "description": "Lost and found item reports"
+    },
+    "/match_suggestions/{matchId}": {
+      "schema": "MatchSuggestion",
+      "description": "Admin-only suggested matches generated by weighted matching engine"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Admin alerts and notifications"
+    },
+    "/admin_actions/{actionId}": {
+      "schema": "AdminAction",
+      "description": "Immutable audit log of all administrator operations"
+    },
+    "/test/{testId}": {
+      "schema": "TestDoc",
+      "description": "Connection probe document"
+    }
+  }
+}

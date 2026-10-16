@@ -1,0 +1,6 @@
+{
+  "name": "CampusFind",
+  "description": "Admin-controlled, AI-assisted lost-and-found platform for Victoria University campus.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

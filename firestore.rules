@@ -1,0 +1,189 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: everything is denied unless a rule below allows it
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---------- Helper functions ----------
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // The single administrator account of the live demonstration.
+    // Nobody can sign up with this address through the app (it is refused in the sign-up code).
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'admin@campusfind.test';
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'name', 'email', 'role', 'status', 'accountStatus']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.name is string && data.name.size() <= 100 &&
+        data.email is string && data.email.size() <= 128 &&
+        data.role in ['student', 'staff', 'admin'] &&
+        data.status in ['pending', 'active'] &&
+        data.accountStatus in ['active', 'suspended'];
+    }
+
+    function isValidItemReport(data) {
+      return data.keys().hasAll(['id', 'userId', 'type', 'itemName', 'category', 'colour', 'location', 'date', 'description', 'status']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.userId is string && data.userId.size() <= 128 &&
+        data.type in ['lost', 'found'] &&
+        data.itemName is string && data.itemName.size() <= 120 &&
+        data.category in [
+          'Laptop / tablet', 'Phone', 'Student ID / cards', 'Wallet',
+          'Bag / backpack', 'Keys', 'Headphones / earbuds', 'Books / stationery',
+          'Clothing', 'Other'
+        ] &&
+        data.colour is string && data.colour.size() <= 50 &&
+        data.location is string && data.location.size() <= 150 &&
+        data.date is string && data.date.size() <= 20 &&
+        data.description is string && data.description.size() <= 2000 &&
+        data.status in [
+          'Submitted', 'Under Review', 'Possible Match',
+          'Pending Verification', 'Returned', 'Rejected', 'Archived'
+        ] &&
+        (!('contactEmail' in data) || data.contactEmail == null || (data.contactEmail is string && data.contactEmail.size() <= 120)) &&
+        (!('contactPhone' in data) || data.contactPhone == null || (data.contactPhone is string && data.contactPhone.size() <= 30)) &&
+        (!('urgentReason' in data) || data.urgentReason == null || (data.urgentReason is string && data.urgentReason.size() <= 140)) &&
+        (!('urgent' in data) || data.urgent is bool);
+    }
+
+    function isValidAdminAction(data) {
+      return data.keys().hasAll(['id', 'adminId', 'adminName', 'action', 'details', 'createdAt']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.adminId is string && data.adminId.size() <= 128 &&
+        data.adminName is string && data.adminName.size() <= 100 &&
+        data.action is string && data.action.size() <= 80 &&
+        data.details is string && data.details.size() <= 2000;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['id', 'audience', 'type', 'message', 'read', 'createdAt']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.audience == 'admin' &&
+        data.type is string && data.type.size() <= 60 &&
+        data.message is string && data.message.size() <= 1000 &&
+        data.read is bool;
+    }
+
+    // Owner editing the descriptive fields of an open, unlocked report
+    function ownerEditsDetails() {
+      return existing().userId == request.auth.uid &&
+        existing().get('locked', false) == false &&
+        !(existing().status in ['Pending Verification', 'Returned', 'Archived']) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'itemName', 'colour', 'location', 'date', 'description', 'descriptionTokens',
+          'whereItemIs', 'imageUrl', 'imageAltText', 'lastActivityAt', 'matchCheckedAt'
+        ]) &&
+        isValidItemReport(incoming());
+    }
+
+    // Owner changing only their contact details (allowed until the case is closed)
+    function ownerEditsContact() {
+      return existing().userId == request.auth.uid &&
+        !(existing().status in ['Returned', 'Archived']) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['contactEmail', 'contactPhone', 'lastActivityAt']) &&
+        isValidItemReport(incoming());
+    }
+
+    // Owner deleting their account: personal details are removed, the report is archived and locked
+    function ownerAnonymises() {
+      return existing().userId == request.auth.uid &&
+        incoming().userId == existing().userId &&
+        incoming().locked == true &&
+        incoming().get('userName', '') == 'Deleted account' &&
+        incoming().get('userEmail', null) == null &&
+        incoming().get('contactEmail', null) == null &&
+        incoming().get('contactPhone', null) == null &&
+        incoming().get('urgent', false) == false &&
+        incoming().status in [existing().status, 'Archived'] &&
+        isValidItemReport(incoming());
+    }
+
+    // ---------- Connection probe ----------
+    match /test/{testId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ---------- Users (personal details: owner and administrator only) ----------
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isOwner(userId) && isValidUser(incoming()) &&
+        incoming().id == userId &&
+        incoming().email == request.auth.token.email &&
+        incoming().status == 'active' &&
+        incoming().accountStatus == 'active' &&
+        (incoming().role in ['student', 'staff'] || (incoming().role == 'admin' && isAdmin()));
+      allow update: if isValidId(userId) && (
+        isAdmin() ||
+        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name']))
+      );
+      // A person may delete their own profile (account deletion) unless the account is suspended
+      allow delete: if isValidId(userId) && isOwner(userId) && existing().accountStatus == 'active';
+    }
+
+    // ---------- Item reports ----------
+    match /item_reports/{reportId} {
+      allow get: if isValidId(reportId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(reportId) && isSignedIn() &&
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'Submitted' &&
+        isValidItemReport(incoming());
+      allow update: if isValidId(reportId) && (
+        isAdmin() || (isSignedIn() && (ownerEditsDetails() || ownerEditsContact() || ownerAnonymises()))
+      );
+      allow delete: if isValidId(reportId) && isAdmin();
+    }
+
+    // ---------- Match suggestions (administrator only) ----------
+    match /match_suggestions/{matchId} {
+      allow get, create, update, delete: if isValidId(matchId) && isAdmin();
+      allow list: if isAdmin();
+    }
+
+    // ---------- Notifications (administrator alerts) ----------
+    // Reporters can only add an alert for the administrator (for example a suspected duplicate);
+    // they can never read, change or delete alerts.
+    match /notifications/{notificationId} {
+      allow get, update, delete: if isValidId(notificationId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(notificationId) && isSignedIn() && isValidNotification(incoming());
+    }
+
+    // ---------- Audit log (append only) ----------
+    // The administrator writes entries. A signed-in user may only add a system entry about themselves.
+    match /admin_actions/{actionId} {
+      allow get: if isValidId(actionId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(actionId) && isValidAdminAction(incoming()) && (
+        isAdmin() ||
+        (isSignedIn() && incoming().adminId == 'system' && incoming().get('targetUserId', '') == request.auth.uid)
+      );
+      allow update, delete: if false;
+    }
+  }
+}
